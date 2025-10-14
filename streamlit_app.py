@@ -1,123 +1,8 @@
-# Importar librerías
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import requests
-import io
-
-# --- Configuración de la Página ---
-st.set_page_config(
-    page_title="Dashboard Energético Avanzado de Asepeyo",
-    page_icon="⚡",
-    layout="wide",
-)
-
-# --- Funciones de Carga y Procesamiento ---
-@st.cache_data
-def load_csv_from_source(source):
-    """Carga datos desde un archivo subido o una URL de GitHub."""
-    if source is None:
-        return pd.DataFrame()
-    try:
-        # Si es una URL, usa requests para manejarla
-        if isinstance(source, str) and source.startswith('http'):
-            response = requests.get(source)
-            response.raise_for_status()
-            return pd.read_csv(io.StringIO(response.text), skipinitialspace=True)
-        # Si es un archivo subido
-        return pd.read_csv(source, skipinitialspace=True)
-    except Exception as e:
-        st.error(f"Error al leer el archivo CSV: {e}")
-        return pd.DataFrame()
-
-@st.cache_data
-def get_github_csv_files(repo, path="Data"):
-    """Obtiene una lista de archivos CSV de un directorio en un repositorio de GitHub."""
-    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    try:
-        response = requests.get(url=api_url)
-        response.raise_for_status()
-        files_json = response.json()
-        if isinstance(files_json, dict) and 'message' in files_json:
-            st.error(f"No se pudo encontrar el directorio '{path}'. Error de GitHub: {files_json['message']}")
-            return []
-        return [file['name'] for file in files_json if file['type'] == 'file' and file['name'].endswith('.csv')]
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar con la API de GitHub: {e}")
-        return []
-
-# --- Barra Lateral (Sidebar) ---
-with st.sidebar:
-    st.title('⚡ Panel de Control')
-    
-    st.header("1. Fuente de Datos")
-    source_type = st.radio("Seleccionar origen", ["Cargar Archivos", "Desde GitHub"], key="source_type")
-
-    df_energy_raw = pd.DataFrame()
-    df_weather_raw = pd.DataFrame()
-
-    if source_type == "Cargar Archivos":
-        uploaded_energy_file = st.file_uploader("Archivo de Consumo (CSV)", type="csv")
-        uploaded_weather_file = st.file_uploader("Archivo de Clima (CSV)", type="csv")
-        df_energy_raw = load_csv_from_source(uploaded_energy_file)
-        df_weather_raw = load_csv_from_source(uploaded_weather_file)
-    else:
-        github_repo = st.text_input("Repositorio GitHub (usuario/repo)", "Hardik-Derashri/EnergyPatternAnalysis")
-        if github_repo:
-            csv_files_list = get_github_csv_files(github_repo)
-            if csv_files_list:
-                base_url = f"https://raw.githubusercontent.com/{github_repo}/main/Data/"
-                selected_energy_file = st.selectbox("Selecciona archivo de consumo", [""] + csv_files_list)
-                selected_weather_file = st.selectbox("Selecciona archivo de clima", [""] + csv_files_list)
-                if selected_energy_file:
-                    df_energy_raw = load_csv_from_source(base_url + selected_energy_file)
-                if selected_weather_file:
-                    df_weather_raw = load_csv_from_source(base_url + selected_weather_file)
-            else:
-                st.warning("No se encontraron archivos CSV en la carpeta 'Data/' del repositorio.")
-
-    # --- Procesamiento y Filtros ---
-    df_energy = pd.DataFrame()
-    if not df_energy_raw.empty:
-        try:
-            df_energy = df_energy_raw.copy()
-            df_energy.rename(columns={'Fecha': 'datetime', 'Energía activa (kWh)': 'Consumption_kWh'}, inplace=True)
-            df_energy['datetime'] = pd.to_datetime(df_energy['datetime'], format='%d/%m/%Y %H:%M')
-            df_energy.set_index('datetime', inplace=True)
-            st.sidebar.success("Datos de consumo cargados.")
-
-            st.sidebar.markdown("---")
-            st.sidebar.header("2. Filtros de Datos")
-            
-            dias_semana = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'}
-            selected_days = st.sidebar.multiselect("Días de la semana", options=list(dias_semana.keys()), format_func=lambda x: dias_semana[x], default=list(dias_semana.keys()))
-            selected_hours = st.sidebar.slider("Horas del día", 0, 23, (0, 23))
-            
-            min_date, max_date = df_energy.index.min().date(), df_energy.index.max().date()
-            date_range = st.sidebar.date_input("Rango de fechas", value=(min_date, max_date), min_value=min_date, max_value=max_date)
-
-            st.sidebar.markdown("---")
-            st.sidebar.header("3. Ajustes de Análisis")
-            
-            remove_baseline = st.sidebar.checkbox("Eliminar consumo base")
-            baseline_threshold = st.sidebar.number_input("Umbral base (kWh)", value=float(df_energy['Consumption_kWh'].quantile(0.1)), disabled=not remove_baseline)
-            
-            remove_anomalies = st.sidebar.checkbox("Eliminar anomalías (picos)")
-            anomaly_percentile = st.sidebar.number_input("Percentil para anomalías", value=99.0, min_value=90.0, max_value=100.0, disabled=not remove_anomalies)
-            
-            st.sidebar.markdown("---")
-            st.sidebar.header("4. Constantes Matemáticas (HVAC)")
-            base_temp_heating = st.sidebar.number_input("Temp. base calefacción (°C)", value=18.0, step=0.5)
-            base_temp_cooling = st.sidebar.number_input("Temp. base refrigeración (°C)", value=21.0, step=0.5)
-
-        except Exception as e:
-            st.sidebar.error(f"Error procesando datos de energía: {e}")
-            df_energy = pd.DataFrame()
-
 # --- Panel Principal ---
 st.title("Dashboard de Análisis de Consumo Energético")
 
 if not df_energy.empty:
+    # --- Aplicación de Filtros ---
     df_filtered = df_energy.copy()
     if len(date_range) == 2:
         start_date, end_date = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
@@ -131,31 +16,45 @@ if not df_energy.empty:
         upper_bound = df_filtered['Consumption_kWh'].quantile(anomaly_percentile / 100.0)
         df_filtered = df_filtered[df_filtered['Consumption_kWh'] < upper_bound]
 
+    # --- Visualización de Datos ---
     st.markdown(f"Mostrando **{len(df_filtered):,}** registros tras aplicar filtros.")
     st.markdown("---")
     
     st.header("Análisis de Patrones Temporales")
     if not df_filtered.empty:
+        # Gráfico de evolución temporal
         st.plotly_chart(px.line(df_filtered.reset_index(), x='datetime', y='Consumption_kWh', title='Evolución del Consumo Energético'), use_container_width=True)
         
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Patrón Diario Promedio")
+            # Agrupamos por hora y reiniciamos el índice
             df_hourly = df_filtered.groupby(df_filtered.index.hour).mean().reset_index()
-            st.plotly_chart(px.bar(df_hourly, x='datetime', y='Consumption_kWh', title='Consumo Promedio por Hora'), use_container_width=True)
+            # ✨ MEJORA: Renombramos la columna 'datetime' (que contiene horas) a 'Hora' para mayor claridad
+            df_hourly.rename(columns={'datetime': 'Hora'}, inplace=True)
+            st.plotly_chart(px.bar(df_hourly, x='Hora', y='Consumption_kWh', title='Consumo Promedio por Hora'), use_container_width=True)
+
         with col2:
             st.subheader("Patrón Semanal Promedio")
-            if not df_filtered.index.dayofweek.isin(selected_days).all():
-                df_weekly = df_filtered[df_filtered.index.dayofweek.isin(selected_days)].groupby(df_filtered.index.dayofweek).mean()
-            else:
-                 df_weekly = df_filtered.groupby(df_filtered.index.dayofweek).mean()
+            # Agrupamos por día de la semana
+            df_weekly = df_filtered.groupby(df_filtered.index.dayofweek).mean()
 
             if not df_weekly.empty:
+                # Mapeamos los números del día (0-6) a los nombres ('Lunes', 'Martes', ...)
                 df_weekly.index = df_weekly.index.map(dias_semana)
-                st.plotly_chart(px.bar(df_weekly.reset_index(), x='index', y='Consumption_kWh', title='Consumo Promedio por Día'), use_container_width=True)
+                
+                # Convertimos el índice a una columna. La nueva columna se llamará 'datetime' (el nombre original del índice)
+                df_plot_weekly = df_weekly.reset_index()
+                
+                # ✨ CORRECCIÓN Y MEJORA: Renombramos la columna 'datetime' a 'Día' para que sea más claro
+                df_plot_weekly.rename(columns={'datetime': 'Día'}, inplace=True)
+                
+                # Usamos el nombre de columna correcto 'Día' en el eje x
+                st.plotly_chart(px.bar(df_plot_weekly, x='Día', y='Consumption_kWh', title='Consumo Promedio por Día'), use_container_width=True)
     else:
         st.warning("No hay datos de consumo para los filtros seleccionados.")
 
+    # --- Análisis Climático (sin cambios en esta parte) ---
     if not df_weather_raw.empty:
         st.markdown("---")
         st.header("Correlación del Consumo con el Clima")
