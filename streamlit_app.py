@@ -28,7 +28,7 @@ def load_csv_from_source(source):
         return pd.DataFrame()
     try:
         if isinstance(source, str) and source.startswith('http'):
-            # Usar 'raw.githubusercontent.com' para el contenido directo
+            # Esta parte funciona perfectamente para URLs 'raw'
             response = requests.get(source)
             response.raise_for_status()
             return pd.read_csv(io.StringIO(response.text), skipinitialspace=True)
@@ -38,21 +38,8 @@ def load_csv_from_source(source):
         st.error(f"Error al leer el archivo CSV: {e}")
         return pd.DataFrame()
 
-@st.cache_data
-def get_github_csv_files(repo, path="Data"):
-    """Obtiene una lista de archivos CSV de un directorio en un repositorio de GitHub."""
-    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
-    try:
-        response = requests.get(url=api_url)
-        response.raise_for_status()
-        files_json = response.json()
-        if isinstance(files_json, dict) and 'message' in files_json:
-            st.error(f"No se pudo encontrar el directorio '{path}'. Error de GitHub: {files_json['message']}")
-            return []
-        return [file['name'] for file in files_json if file['type'] == 'file' and file['name'].endswith('.csv')]
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar con la API de GitHub: {e}")
-        return []
+# ⛔️ FUNCIÓN ELIMINADA ⛔️
+# Ya no necesitamos get_github_csv_files, que era la que daba el error 404.
 
 # --- ✨ NUEVA FUNCIÓN: Gestión de Agregación Temporal ---
 def gestionar_agregacion_temporal(df, nivel):
@@ -71,10 +58,9 @@ def gestionar_agregacion_temporal(df, nivel):
     
     # Si no es 'Horario', aplicamos el remuestreo
     if nivel in reglas:
-        # Usamos .agg para calcular la media del consumo y mantener otras columnas si fuera necesario
         df_agregado = df.resample(reglas[nivel]).agg({
             'Consumption_kWh': 'mean'
-        }).dropna() # Eliminar filas sin datos (e.g., meses sin consumo)
+        }).dropna()
         return df_agregado
     
     # Si es 'Horario', devolvemos los datos filtrados tal cual
@@ -82,8 +68,11 @@ def gestionar_agregacion_temporal(df, nivel):
 
 
 # --- Inicialización de DataFrames ---
-df_energy = pd.DataFrame()
-df_weather_raw = pd.DataFrame()
+# Usaremos st.session_state para almacenar los datos cargados desde GitHub
+if 'df_energy_raw' not in st.session_state:
+    st.session_state.df_energy_raw = pd.DataFrame()
+if 'df_weather_raw' not in st.session_state:
+    st.session_state.df_weather_raw = pd.DataFrame()
 
 # --- Barra Lateral (Sidebar) ---
 with st.sidebar:
@@ -92,38 +81,41 @@ with st.sidebar:
     st.header("1. Fuente de Datos")
     source_type = st.radio("Seleccionar origen", ["Cargar Archivos", "Desde GitHub"], key="source_type")
 
-    df_energy_raw = pd.DataFrame()
-
     if source_type == "Cargar Archivos":
         uploaded_energy_file = st.file_uploader("Archivo de Consumo (CSV)", type="csv")
         uploaded_weather_file = st.file_uploader("Archivo de Clima (CSV)", type="csv")
-        df_energy_raw = load_csv_from_source(uploaded_energy_file)
-        df_weather_raw = load_csv_from_source(uploaded_weather_file)
-    else:
-        # ✨ CORREGIDO: Se actualizó el nombre de usuario 'Hardik-Derashri' a 'hardik5838'
-        github_repo = st.text_input("Repositorio GitHub (usuario/repo)", "hardik5838/EnergyPatternAnalysis")
         
-        if github_repo:
-            csv_files_list = get_github_csv_files(github_repo, path="Data") # Aseguramos que la ruta es "Data"
-            if csv_files_list:
-                # La URL para el contenido raw es diferente de la URL de la API
-                base_url = f"https://raw.githubusercontent.com/{github_repo}/main/Data/"
-                selected_energy_file = st.selectbox("Selecciona archivo de consumo", [""] + csv_files_list)
-                selected_weather_file = st.selectbox("Selecciona archivo de clima", [""] + csv_files_list)
-                
-                if selected_energy_file:
-                    df_energy_raw = load_csv_from_source(base_url + selected_energy_file)
-                if selected_weather_file:
-                    df_weather_raw = load_csv_from_source(base_url + selected_weather_file)
-            else:
-                st.warning("No se encontraron archivos CSV en la carpeta 'Data/' del repositorio.")
+        # Si el usuario sube un archivo, este tiene prioridad
+        if uploaded_energy_file:
+            st.session_state.df_energy_raw = load_csv_from_source(uploaded_energy_file)
+        if uploaded_weather_file:
+            st.session_state.df_weather_raw = load_csv_from_source(uploaded_weather_file)
+    
+    else:
+        # --- ✨ NUEVO ENFOQUE DE CARGA DIRECTA ---
+        st.markdown("Carga los datos de ejemplo desde el repositorio `hardik5838/EnergyPatternAnalysis`.")
+        
+        # URLs directas a los archivos RAW
+        REPO_URL = "https://raw.githubusercontent.com/hardik5838/EnergyPatternAnalysis/main/Data"
+        ENERGY_FILE_URL = f"{REPO_URL}/Energy_data.csv"
+        WEATHER_FILE_URL = f"{REPO_URL}/Weather_data.csv"
+
+        if st.button("Cargar datos desde GitHub"):
+            with st.spinner("Descargando archivos..."):
+                # Cargamos los datos y los guardamos en el estado de la sesión
+                st.session_state.df_energy_raw = load_csv_from_source(ENERGY_FILE_URL)
+                st.session_state.df_weather_raw = load_csv_from_source(WEATHER_FILE_URL)
+
+    # Asignar datos desde el session_state a las variables locales
+    df_energy_raw = st.session_state.df_energy_raw
+    df_weather_raw = st.session_state.df_weather_raw
 
     # --- Procesamiento y Filtros ---
     if not df_energy_raw.empty:
         try:
             df_energy = df_energy_raw.copy()
-            # Renombrar columnas (adaptado a los CSV de ese repositorio)
-            # Intentamos detectar las columnas comunes de los archivos de ese repo
+            
+            # Procesamiento de columnas (este repositorio tiene varios formatos)
             if 'Fecha' in df_energy.columns and 'Energía activa (kWh)' in df_energy.columns:
                  df_energy.rename(columns={'Fecha': 'datetime', 'Energía activa (kWh)': 'Consumption_kWh'}, inplace=True)
                  df_energy['datetime'] = pd.to_datetime(df_energy['datetime'], format='%d/%m/%Y %H:%M')
@@ -131,7 +123,7 @@ with st.sidebar:
                  df_energy.rename(columns={'Date & Time': 'datetime', 'Consumption(kWh)': 'Consumption_kWh'}, inplace=True)
                  df_energy['datetime'] = pd.to_datetime(df_energy['datetime'])
             else:
-                st.sidebar.error("Formato de CSV de energía no reconocido. Se esperan columnas como 'Fecha' y 'Energía activa (kWh)' o 'Date & Time' y 'Consumption(kWh)'.")
+                st.sidebar.error("Formato de CSV de energía no reconocido.")
                 df_energy = pd.DataFrame()
 
             if not df_energy.empty:
@@ -151,12 +143,11 @@ with st.sidebar:
                 st.sidebar.markdown("---")
                 st.sidebar.header("3. Ajustes de Análisis")
 
-                # ✨ NUEVO: Selector de agregación temporal
                 aggregation_level = st.sidebar.selectbox(
                     "Ver datos por",
                     options=["Horario", "Diario", "Mensual"],
                     index=0,
-                    help="Cambia la resolución del gráfico de evolución temporal (e.g., ver promedios diarios en lugar de datos horarios)."
+                    help="Cambia la resolución del gráfico de evolución temporal."
                 )
                 
                 remove_baseline = st.sidebar.checkbox("Eliminar consumo base")
@@ -173,11 +164,16 @@ with st.sidebar:
         except Exception as e:
             st.sidebar.error(f"Error procesando datos de energía: {e}")
             df_energy = pd.DataFrame()
+    elif source_type == "Desde GitHub":
+        st.sidebar.info("Presiona el botón 'Cargar datos desde GitHub' para comenzar.")
+    else:
+         st.sidebar.info("Sube un archivo CSV para comenzar.")
+
 
 # --- Panel Principal ---
 st.title("Dashboard de Análisis de Consumo Energético")
 
-if not df_energy.empty:
+if 'df_energy' in locals() and not df_energy.empty:
     # --- Aplicación de Filtros ---
     df_filtered = df_energy.copy()
     if len(date_range) == 2:
@@ -192,7 +188,7 @@ if not df_energy.empty:
         upper_bound = df_filtered['Consumption_kWh'].quantile(anomaly_percentile / 100.0)
         df_filtered = df_filtered[df_filtered['Consumption_kWh'] < upper_bound]
 
-    # --- ✨ NUEVO: Aplicar agregación temporal ---
+    # --- Aplicar agregación temporal ---
     df_display = gestionar_agregacion_temporal(df_filtered, aggregation_level)
 
     # --- Visualización de Datos ---
@@ -203,23 +199,16 @@ if not df_energy.empty:
     
     st.header("Análisis de Patrones Temporales")
     if not df_display.empty:
-        # ✨ MEJORADO: Título dinámico y tooltip con más detalles
         st.subheader(f"Evolución del Consumo Energético ({aggregation_level})")
         
-        # Preparar datos extra para el tooltip
         df_plot = df_display.reset_index()
         
-        # Formato de hover diferente para agregaciones
         if aggregation_level == "Mensual":
-            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%B %Y')
             hover_template = '<b>Mes</b>: %{x|%B %Y}<br><b>Consumo Medio</b>: %{y:.2f} kWh'
         elif aggregation_level == "Diario":
-            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%A, %d de %B')
             hover_template = '<b>Día</b>: %{x|%A, %d %b %Y}<br><b>Consumo Medio</b>: %{y:.2f} kWh'
         else: # Horario
-            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%A, %d %b - %H:%M')
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
-
         
         fig_evolucion = px.line(
             df_plot, 
@@ -229,19 +218,16 @@ if not df_energy.empty:
                 "datetime": f"Fecha ({aggregation_level})",
                 "Consumption_kWh": "Consumo (kWh)"
             },
-            hover_name='Texto Hover',
-            hover_data={"datetime": False} # Ocultar la fecha original
+            hover_data={"datetime": False}
         )
         fig_evolucion.update_traces(hovertemplate=hover_template)
-
         st.plotly_chart(fig_evolucion, use_container_width=True)
         
-        # Los gráficos de patrones siguen usando los datos horarios filtrados
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Patrón Diario Promedio")
             df_hourly = df_filtered.groupby(df_filtered.index.hour).mean(numeric_only=True).reset_index()
-            df_hourly.rename(columns={'index': 'Hora'}, inplace=True)
+            df_hourly.rename(columns={'datetime': 'Hora'}, inplace=True)
             st.plotly_chart(px.bar(df_hourly, x='Hora', y='Consumption_kWh', title='Consumo Promedio por Hora'), use_container_width=True)
         with col2:
             st.subheader("Patrón Semanal Promedio")
@@ -249,7 +235,7 @@ if not df_energy.empty:
             if not df_weekly.empty:
                 df_weekly.index = df_weekly.index.map(dias_semana)
                 df_plot_weekly = df_weekly.reset_index()
-                df_plot_weekly.rename(columns={'index': 'Día'}, inplace=True)
+                df_plot_weekly.rename(columns={'datetime': 'Día'}, inplace=True)
                 st.plotly_chart(px.bar(df_plot_weekly, x='Día', y='Consumption_kWh', title='Consumo Promedio por Día'), use_container_width=True)
     else:
         st.warning("No hay datos de consumo para los filtros seleccionados.")
@@ -261,11 +247,10 @@ if not df_energy.empty:
         try:
             df_weather = df_weather_raw.copy()
             
-            # Procesamiento de datos de clima (adaptado a los CSV de ese repo)
-            if 'YEAR' in df_weather.columns: # Formato Weather_data.csv
+            if 'YEAR' in df_weather.columns:
                  df_weather['datetime'] = pd.to_datetime(df_weather[['YEAR', 'MO', 'DY', 'HR']].astype(str).agg('-'.join, axis=1), format='%Y-%m-%d-%H')
                  df_weather = df_weather[['datetime', 'T2M', 'RH2M']].set_index('datetime')
-            elif 'Date & Time' in df_weather.columns: # Formato Weather_Data_Geneva.csv
+            elif 'Date & Time' in df_weather.columns:
                 df_weather.rename(columns={'Date & Time': 'datetime', 'Temperature(°C)': 'T2M', 'Humidity(%)': 'RH2M'}, inplace=True)
                 df_weather['datetime'] = pd.to_datetime(df_weather['datetime'])
                 df_weather = df_weather[['datetime', 'T2M', 'RH2M']].set_index('datetime')
@@ -289,4 +274,4 @@ if not df_energy.empty:
         except Exception as e:
             st.error(f"Error al procesar o fusionar los datos de clima: {e}")
 else:
-    st.info("Para comenzar, carga un archivo de consumo o selecciona uno desde GitHub en la barra lateral.")
+    st.info("Para comenzar, carga un archivo de consumo o selecciona 'Desde GitHub' y presiona el botón en la barra lateral.")
