@@ -28,9 +28,11 @@ def load_csv_from_source(source):
         return pd.DataFrame()
     try:
         if isinstance(source, str) and source.startswith('http'):
+            # Usar 'raw.githubusercontent.com' para el contenido directo
             response = requests.get(source)
             response.raise_for_status()
             return pd.read_csv(io.StringIO(response.text), skipinitialspace=True)
+        # Si es un archivo subido (UploadedFile)
         return pd.read_csv(source, skipinitialspace=True)
     except Exception as e:
         st.error(f"Error al leer el archivo CSV: {e}")
@@ -98,13 +100,17 @@ with st.sidebar:
         df_energy_raw = load_csv_from_source(uploaded_energy_file)
         df_weather_raw = load_csv_from_source(uploaded_weather_file)
     else:
-        github_repo = st.text_input("Repositorio GitHub (usuario/repo)", "Hardik-Derashri/EnergyPatternAnalysis")
+        # ✨ CORREGIDO: Se actualizó el nombre de usuario 'Hardik-Derashri' a 'hardik5838'
+        github_repo = st.text_input("Repositorio GitHub (usuario/repo)", "hardik5838/EnergyPatternAnalysis")
+        
         if github_repo:
-            csv_files_list = get_github_csv_files(github_repo)
+            csv_files_list = get_github_csv_files(github_repo, path="Data") # Aseguramos que la ruta es "Data"
             if csv_files_list:
+                # La URL para el contenido raw es diferente de la URL de la API
                 base_url = f"https://raw.githubusercontent.com/{github_repo}/main/Data/"
                 selected_energy_file = st.selectbox("Selecciona archivo de consumo", [""] + csv_files_list)
                 selected_weather_file = st.selectbox("Selecciona archivo de clima", [""] + csv_files_list)
+                
                 if selected_energy_file:
                     df_energy_raw = load_csv_from_source(base_url + selected_energy_file)
                 if selected_weather_file:
@@ -116,42 +122,53 @@ with st.sidebar:
     if not df_energy_raw.empty:
         try:
             df_energy = df_energy_raw.copy()
-            df_energy.rename(columns={'Fecha': 'datetime', 'Energía activa (kWh)': 'Consumption_kWh'}, inplace=True)
-            df_energy['datetime'] = pd.to_datetime(df_energy['datetime'], format='%d/%m/%Y %H:%M')
-            df_energy.set_index('datetime', inplace=True)
-            st.sidebar.success("Datos de consumo cargados.")
+            # Renombrar columnas (adaptado a los CSV de ese repositorio)
+            # Intentamos detectar las columnas comunes de los archivos de ese repo
+            if 'Fecha' in df_energy.columns and 'Energía activa (kWh)' in df_energy.columns:
+                 df_energy.rename(columns={'Fecha': 'datetime', 'Energía activa (kWh)': 'Consumption_kWh'}, inplace=True)
+                 df_energy['datetime'] = pd.to_datetime(df_energy['datetime'], format='%d/%m/%Y %H:%M')
+            elif 'Date & Time' in df_energy.columns and 'Consumption(kWh)' in df_energy.columns:
+                 df_energy.rename(columns={'Date & Time': 'datetime', 'Consumption(kWh)': 'Consumption_kWh'}, inplace=True)
+                 df_energy['datetime'] = pd.to_datetime(df_energy['datetime'])
+            else:
+                st.sidebar.error("Formato de CSV de energía no reconocido. Se esperan columnas como 'Fecha' y 'Energía activa (kWh)' o 'Date & Time' y 'Consumption(kWh)'.")
+                df_energy = pd.DataFrame()
 
-            st.sidebar.markdown("---")
-            st.sidebar.header("2. Filtros de Datos")
-            
-            dias_semana = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'}
-            selected_days = st.sidebar.multiselect("Días de la semana", options=list(dias_semana.keys()), format_func=lambda x: dias_semana[x], default=list(dias_semana.keys()))
-            selected_hours = st.sidebar.slider("Horas del día", 0, 23, (0, 23))
-            
-            min_date, max_date = df_energy.index.min().date(), df_energy.index.max().date()
-            date_range = st.sidebar.date_input("Rango de fechas", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+            if not df_energy.empty:
+                df_energy.set_index('datetime', inplace=True)
+                st.sidebar.success("Datos de consumo cargados.")
 
-            st.sidebar.markdown("---")
-            st.sidebar.header("3. Ajustes de Análisis")
+                st.sidebar.markdown("---")
+                st.sidebar.header("2. Filtros de Datos")
+                
+                dias_semana = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'}
+                selected_days = st.sidebar.multiselect("Días de la semana", options=list(dias_semana.keys()), format_func=lambda x: dias_semana[x], default=list(dias_semana.keys()))
+                selected_hours = st.sidebar.slider("Horas del día", 0, 23, (0, 23))
+                
+                min_date, max_date = df_energy.index.min().date(), df_energy.index.max().date()
+                date_range = st.sidebar.date_input("Rango de fechas", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 
-            # ✨ NUEVO: Selector de agregación temporal
-            aggregation_level = st.sidebar.selectbox(
-                "Ver datos por",
-                options=["Horario", "Diario", "Mensual"],
-                index=0,
-                help="Cambia la resolución del gráfico de evolución temporal (e.g., ver promedios diarios en lugar de datos horarios)."
-            )
-            
-            remove_baseline = st.sidebar.checkbox("Eliminar consumo base")
-            baseline_threshold = st.sidebar.number_input("Umbral base (kWh)", value=float(df_energy['Consumption_kWh'].quantile(0.1)), disabled=not remove_baseline)
-            
-            remove_anomalies = st.sidebar.checkbox("Eliminar anomalías (picos)")
-            anomaly_percentile = st.sidebar.number_input("Percentil para anomalías", value=99.0, min_value=90.0, max_value=100.0, disabled=not remove_anomalies)
-            
-            st.sidebar.markdown("---")
-            st.sidebar.header("4. Constantes Matemáticas (HVAC)")
-            base_temp_heating = st.sidebar.number_input("Temp. base calefacción (°C)", value=18.0, step=0.5)
-            base_temp_cooling = st.sidebar.number_input("Temp. base refrigeración (°C)", value=21.0, step=0.5)
+                st.sidebar.markdown("---")
+                st.sidebar.header("3. Ajustes de Análisis")
+
+                # ✨ NUEVO: Selector de agregación temporal
+                aggregation_level = st.sidebar.selectbox(
+                    "Ver datos por",
+                    options=["Horario", "Diario", "Mensual"],
+                    index=0,
+                    help="Cambia la resolución del gráfico de evolución temporal (e.g., ver promedios diarios en lugar de datos horarios)."
+                )
+                
+                remove_baseline = st.sidebar.checkbox("Eliminar consumo base")
+                baseline_threshold = st.sidebar.number_input("Umbral base (kWh)", value=float(df_energy['Consumption_kWh'].quantile(0.1)), disabled=not remove_baseline)
+                
+                remove_anomalies = st.sidebar.checkbox("Eliminar anomalías (picos)")
+                anomaly_percentile = st.sidebar.number_input("Percentil para anomalías", value=99.0, min_value=90.0, max_value=100.0, disabled=not remove_anomalies)
+                
+                st.sidebar.markdown("---")
+                st.sidebar.header("4. Constantes Matemáticas (HVAC)")
+                base_temp_heating = st.sidebar.number_input("Temp. base calefacción (°C)", value=18.0, step=0.5)
+                base_temp_cooling = st.sidebar.number_input("Temp. base refrigeración (°C)", value=21.0, step=0.5)
 
         except Exception as e:
             st.sidebar.error(f"Error procesando datos de energía: {e}")
@@ -191,7 +208,18 @@ if not df_energy.empty:
         
         # Preparar datos extra para el tooltip
         df_plot = df_display.reset_index()
-        df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%A, %d de %B de %Y - %H:%M')
+        
+        # Formato de hover diferente para agregaciones
+        if aggregation_level == "Mensual":
+            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%B %Y')
+            hover_template = '<b>Mes</b>: %{x|%B %Y}<br><b>Consumo Medio</b>: %{y:.2f} kWh'
+        elif aggregation_level == "Diario":
+            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%A, %d de %B')
+            hover_template = '<b>Día</b>: %{x|%A, %d %b %Y}<br><b>Consumo Medio</b>: %{y:.2f} kWh'
+        else: # Horario
+            df_plot['Texto Hover'] = df_plot['datetime'].dt.strftime('%A, %d %b - %H:%M')
+            hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
+
         
         fig_evolucion = px.line(
             df_plot, 
@@ -199,16 +227,12 @@ if not df_energy.empty:
             y='Consumption_kWh',
             labels={
                 "datetime": f"Fecha ({aggregation_level})",
-                "Consumption_kWh": "Consumo Promedio (kWh)"
+                "Consumption_kWh": "Consumo (kWh)"
             },
-            # ✨ MEJORADO: Tooltip personalizado para más info
             hover_name='Texto Hover',
-            hover_data={
-                'Consumption_kWh': ':.2f', # Formato con 2 decimales
-                'datetime': False # Ocultar la fecha original del hover
-            }
+            hover_data={"datetime": False} # Ocultar la fecha original
         )
-        fig_evolucion.update_traces(hovertemplate='<b>Consumo</b>: %{hovertext} kWh<br><b>Fecha</b>: %{x}')
+        fig_evolucion.update_traces(hovertemplate=hover_template)
 
         st.plotly_chart(fig_evolucion, use_container_width=True)
         
@@ -216,16 +240,16 @@ if not df_energy.empty:
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Patrón Diario Promedio")
-            df_hourly = df_filtered.groupby(df_filtered.index.hour).mean().reset_index()
-            df_hourly.rename(columns={'datetime': 'Hora'}, inplace=True)
+            df_hourly = df_filtered.groupby(df_filtered.index.hour).mean(numeric_only=True).reset_index()
+            df_hourly.rename(columns={'index': 'Hora'}, inplace=True)
             st.plotly_chart(px.bar(df_hourly, x='Hora', y='Consumption_kWh', title='Consumo Promedio por Hora'), use_container_width=True)
         with col2:
             st.subheader("Patrón Semanal Promedio")
-            df_weekly = df_filtered.groupby(df_filtered.index.dayofweek).mean()
+            df_weekly = df_filtered.groupby(df_filtered.index.dayofweek).mean(numeric_only=True)
             if not df_weekly.empty:
                 df_weekly.index = df_weekly.index.map(dias_semana)
                 df_plot_weekly = df_weekly.reset_index()
-                df_plot_weekly.rename(columns={'datetime': 'Día'}, inplace=True)
+                df_plot_weekly.rename(columns={'index': 'Día'}, inplace=True)
                 st.plotly_chart(px.bar(df_plot_weekly, x='Día', y='Consumption_kWh', title='Consumo Promedio por Día'), use_container_width=True)
     else:
         st.warning("No hay datos de consumo para los filtros seleccionados.")
@@ -236,20 +260,32 @@ if not df_energy.empty:
         st.header("Correlación del Consumo con el Clima")
         try:
             df_weather = df_weather_raw.copy()
-            df_weather['datetime'] = pd.to_datetime(df_weather[['YEAR', 'MO', 'DY', 'HR']].astype(str).agg('-'.join, axis=1), format='%Y-%m-%d-%H')
-            df_weather = df_weather[['datetime', 'T2M', 'RH2M']].set_index('datetime')
-            df_merged = df_filtered.join(df_weather, how='inner').dropna()
-
-            if not df_merged.empty:
-                col3, col4 = st.columns(2)
-                with col3:
-                    st.subheader("Consumo vs. Temperatura")
-                    st.plotly_chart(px.scatter(df_merged, x='T2M', y='Consumption_kWh', labels={'T2M': 'Temperatura (°C)'}, trendline="ols", trendline_color_override="red"), use_container_width=True)
-                with col4:
-                    st.subheader("Consumo vs. Humedad")
-                    st.plotly_chart(px.scatter(df_merged, x='RH2M', y='Consumption_kWh', labels={'RH2M': 'Humedad (%)'}, trendline="ols", trendline_color_override="red"), use_container_width=True)
+            
+            # Procesamiento de datos de clima (adaptado a los CSV de ese repo)
+            if 'YEAR' in df_weather.columns: # Formato Weather_data.csv
+                 df_weather['datetime'] = pd.to_datetime(df_weather[['YEAR', 'MO', 'DY', 'HR']].astype(str).agg('-'.join, axis=1), format='%Y-%m-%d-%H')
+                 df_weather = df_weather[['datetime', 'T2M', 'RH2M']].set_index('datetime')
+            elif 'Date & Time' in df_weather.columns: # Formato Weather_Data_Geneva.csv
+                df_weather.rename(columns={'Date & Time': 'datetime', 'Temperature(°C)': 'T2M', 'Humidity(%)': 'RH2M'}, inplace=True)
+                df_weather['datetime'] = pd.to_datetime(df_weather['datetime'])
+                df_weather = df_weather[['datetime', 'T2M', 'RH2M']].set_index('datetime')
             else:
-                st.warning("No hay datos climáticos para el rango y filtros seleccionados.")
+                st.error("Formato de CSV de clima no reconocido.")
+                df_weather = pd.DataFrame()
+
+            if not df_weather.empty:
+                df_merged = df_filtered.join(df_weather, how='inner').dropna()
+
+                if not df_merged.empty:
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        st.subheader("Consumo vs. Temperatura")
+                        st.plotly_chart(px.scatter(df_merged, x='T2M', y='Consumption_kWh', labels={'T2M': 'Temperatura (°C)'}, trendline="ols", trendline_color_override="red"), use_container_width=True)
+                    with col4:
+                        st.subheader("Consumo vs. Humedad")
+                        st.plotly_chart(px.scatter(df_merged, x='RH2M', y='Consumption_kWh', labels={'RH2M': 'Humedad (%)'}, trendline="ols", trendline_color_override="red"), use_container_width=True)
+                else:
+                    st.warning("No hay datos climáticos para el rango y filtros seleccionados.")
         except Exception as e:
             st.error(f"Error al procesar o fusionar los datos de clima: {e}")
 else:
