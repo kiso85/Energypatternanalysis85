@@ -28,51 +28,53 @@ def load_csv_from_source(source):
         return pd.DataFrame()
     try:
         if isinstance(source, str) and source.startswith('http'):
-            # Esta parte funciona perfectamente para URLs 'raw'
             response = requests.get(source)
-            response.raise_for_status()
+            response.raise_for_status() # Lanza un error si la URL falla (ej. 404)
             return pd.read_csv(io.StringIO(response.text), skipinitialspace=True)
-        # Si es un archivo subido (UploadedFile)
         return pd.read_csv(source, skipinitialspace=True)
     except Exception as e:
         st.error(f"Error al leer el archivo CSV: {e}")
         return pd.DataFrame()
 
-# ⛔️ FUNCIÓN ELIMINADA ⛔️
-# Ya no necesitamos get_github_csv_files, que era la que daba el error 404.
+# ✨ FUNCIÓN RESTAURADA (del dashboard que sí funciona)
+@st.cache_data
+def get_github_csv_files(repo, path="data"):
+    """Obtiene una lista de archivos CSV de un directorio en un repositorio de GitHub."""
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    try:
+        response = requests.get(url=api_url)
+        response.raise_for_status() # Lanza error si la API falla (ej. 404)
+        files_json = response.json()
+        if isinstance(files_json, dict) and 'message' in files_json:
+            st.error(f"No se pudo encontrar el directorio '{path}'. Error de GitHub: {files_json['message']}")
+            return []
+        return [file['name'] for file in files_json if file['type'] == 'file' and file['name'].endswith('.csv')]
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error al conectar con la API de GitHub: {e}")
+        return []
 
-# --- ✨ NUEVA FUNCIÓN: Gestión de Agregación Temporal ---
+# --- Gestión de Agregación Temporal ---
 def gestionar_agregacion_temporal(df, nivel):
     """
     Agrega (resume) el DataFrame a un nivel temporal específico (Diario, Mensual).
-    Devuelve el DataFrame original si el nivel es 'Horario'.
     """
     if df.empty:
         return pd.DataFrame()
 
-    # Mapeo de opciones a reglas de remuestreo de Pandas
-    reglas = {
-        "Diario": "D",
-        "Mensual": "MS" # 'MS' para inicio de mes
-    }
+    reglas = { "Diario": "D", "Mensual": "MS" }
     
-    # Si no es 'Horario', aplicamos el remuestreo
     if nivel in reglas:
         df_agregado = df.resample(reglas[nivel]).agg({
             'Consumption_kWh': 'mean'
         }).dropna()
         return df_agregado
     
-    # Si es 'Horario', devolvemos los datos filtrados tal cual
     return df
 
 
 # --- Inicialización de DataFrames ---
-# Usaremos st.session_state para almacenar los datos cargados desde GitHub
-if 'df_energy_raw' not in st.session_state:
-    st.session_state.df_energy_raw = pd.DataFrame()
-if 'df_weather_raw' not in st.session_state:
-    st.session_state.df_weather_raw = pd.DataFrame()
+df_energy = pd.DataFrame()
+df_weather_raw = pd.DataFrame()
 
 # --- Barra Lateral (Sidebar) ---
 with st.sidebar:
@@ -81,41 +83,59 @@ with st.sidebar:
     st.header("1. Fuente de Datos")
     source_type = st.radio("Seleccionar origen", ["Cargar Archivos", "Desde GitHub"], key="source_type")
 
+    df_energy_raw = pd.DataFrame()
+
     if source_type == "Cargar Archivos":
         uploaded_energy_file = st.file_uploader("Archivo de Consumo (CSV)", type="csv")
         uploaded_weather_file = st.file_uploader("Archivo de Clima (CSV)", type="csv")
-        
-        # Si el usuario sube un archivo, este tiene prioridad
-        if uploaded_energy_file:
-            st.session_state.df_energy_raw = load_csv_from_source(uploaded_energy_file)
-        if uploaded_weather_file:
-            st.session_state.df_weather_raw = load_csv_from_source(uploaded_weather_file)
-    
+        df_energy_raw = load_csv_from_source(uploaded_energy_file)
+        df_weather_raw = load_csv_from_source(uploaded_weather_file)
     else:
-        # --- ✨ NUEVO ENFOQUE DE CARGA DIRECTA ---
-        st.markdown("Carga los datos de ejemplo desde el repositorio `hardik5838/EnergyPatternAnalysis`.")
+        # --- ✨ LÓGICA DE CARGA RESTAURADA (COMO EL DASHBOARD 2) ---
         
-        # URLs directas a los archivos RAW
-        REPO_URL = "https://raw.githubusercontent.com/hardik5838/EnergyPatternAnalysis/main/Data"
-        ENERGY_FILE_URL = f"{REPO_URL}/Energy_data.csv"
-        WEATHER_FILE_URL = f"{REPO_URL}/Weather_data.csv"
-
-        if st.button("Cargar datos desde GitHub"):
-            with st.spinner("Descargando archivos..."):
-                # Cargamos los datos y los guardamos en el estado de la sesión
-                st.session_state.df_energy_raw = load_csv_from_source(ENERGY_FILE_URL)
-                st.session_state.df_weather_raw = load_csv_from_source(WEATHER_FILE_URL)
-
-    # Asignar datos desde el session_state a las variables locales
-    df_energy_raw = st.session_state.df_energy_raw
-    df_weather_raw = st.session_state.df_weather_raw
+        # El repositorio correcto
+        github_repo = st.text_input("Repositorio GitHub (usuario/repo)", "hardik5838/EnergyPatternAnalysis")
+        
+        if github_repo:
+            # ✨ LA CORRECCIÓN CLAVE: path="data" (en minúscula)
+            csv_files_list = get_github_csv_files(github_repo, path="data")
+            
+            if csv_files_list:
+                # ✨ LA CORRECCIÓN CLAVE: base_url usa "data" (en minúscula)
+                base_url = f"https://raw.githubusercontent.com/{github_repo}/main/data/"
+                
+                # Encontrar archivos por nombre (más robusto)
+                energy_file_default = next((f for f in csv_files_list if 'energy' in f.lower()), None)
+                weather_file_default = next((f for f in csv_files_list if 'weather' in f.lower()), None)
+                
+                # Índices para los selectbox
+                index_energy = csv_files_list.index(energy_file_default) if energy_file_default else 0
+                index_weather = csv_files_list.index(weather_file_default) if weather_file_default else 0
+                
+                selected_energy_file = st.selectbox(
+                    "Selecciona archivo de consumo", 
+                    csv_files_list, 
+                    index=index_energy
+                )
+                selected_weather_file = st.selectbox(
+                    "Selecciona archivo de clima", 
+                    csv_files_list, 
+                    index=index_weather
+                )
+                
+                if selected_energy_file:
+                    df_energy_raw = load_csv_from_source(base_url + selected_energy_file)
+                if selected_weather_file:
+                    df_weather_raw = load_csv_from_source(base_url + selected_weather_file)
+            else:
+                st.warning("No se encontraron archivos CSV en la carpeta 'data/' del repositorio.")
 
     # --- Procesamiento y Filtros ---
     if not df_energy_raw.empty:
         try:
             df_energy = df_energy_raw.copy()
             
-            # Procesamiento de columnas (este repositorio tiene varios formatos)
+            # Lógica de renombrado de columnas
             if 'Fecha' in df_energy.columns and 'Energía activa (kWh)' in df_energy.columns:
                  df_energy.rename(columns={'Fecha': 'datetime', 'Energía activa (kWh)': 'Consumption_kWh'}, inplace=True)
                  df_energy['datetime'] = pd.to_datetime(df_energy['datetime'], format='%d/%m/%Y %H:%M')
@@ -164,16 +184,14 @@ with st.sidebar:
         except Exception as e:
             st.sidebar.error(f"Error procesando datos de energía: {e}")
             df_energy = pd.DataFrame()
-    elif source_type == "Desde GitHub":
-        st.sidebar.info("Presiona el botón 'Cargar datos desde GitHub' para comenzar.")
     else:
-         st.sidebar.info("Sube un archivo CSV para comenzar.")
+         st.sidebar.info("Para comenzar, carga un archivo o selecciona 'Desde GitHub'.")
 
 
 # --- Panel Principal ---
 st.title("Dashboard de Análisis de Consumo Energético")
 
-if 'df_energy' in locals() and not df_energy.empty:
+if not df_energy.empty:
     # --- Aplicación de Filtros ---
     df_filtered = df_energy.copy()
     if len(date_range) == 2:
@@ -274,4 +292,4 @@ if 'df_energy' in locals() and not df_energy.empty:
         except Exception as e:
             st.error(f"Error al procesar o fusionar los datos de clima: {e}")
 else:
-    st.info("Para comenzar, carga un archivo de consumo o selecciona 'Desde GitHub' y presiona el botón en la barra lateral.")
+    st.info("Para comenzar, carga un archivo de consumo o selecciona 'Desde GitHub' en la barra lateral.")
