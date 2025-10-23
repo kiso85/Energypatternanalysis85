@@ -236,21 +236,22 @@ if not df_energy.empty:
 
         fig_evolucion = go.Figure()
         
-        # 使用 marker 渐变颜色，折线保持统一颜色（Plotly 不支持线条渐变）
         fig_evolucion.add_trace(go.Scatter(
-            x=df_plot['datetime'],
-            y=df_plot['Consumption_kWh'],
-            mode='lines+markers',
-            line=dict(width=3, color="#2a9d8f"),  # ✅ 固定主线色
+            x=df_plot["datetime"],
+            y=df_plot["Consumption_kWh"],
+            mode="lines+markers",
+            line_color="#2a9d8f",
+            line_width=3,
             marker=dict(
-                color=df_plot['Consumption_kWh'],
-                colorscale='YlGnBu',
+                color=df_plot["Consumption_kWh"],
+                colorscale="YlGnBu",
                 size=6,
                 opacity=0.9,
                 colorbar=dict(title="kWh")
             ),
             hovertemplate=hover_template
         ))
+
         
         # 🪄 样式优化
         fig_evolucion.update_traces(
