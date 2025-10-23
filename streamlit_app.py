@@ -239,7 +239,13 @@ if not df_energy.empty:
             hover_data={"datetime": False}
         )
         fig_evolucion.update_traces(hovertemplate=hover_template)
-        st.plotly_chart(fig_evolucion, use_container_width=True)
+        fig_evolucion.update_traces(
+        line=dict(color='royalblue'),
+        mode='lines+markers',
+        marker=dict(size=4, color='royalblue', opacity=0.6)
+        )
+
+st.plotly_chart(fig_evolucion, use_container_width=True)
         
         col1, col2 = st.columns(2)
         with col1:
