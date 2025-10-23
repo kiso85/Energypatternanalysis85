@@ -265,8 +265,8 @@ if not df_energy.empty:
             marker=dict(
                 color=df_plot["Consumption_kWh"],
                 colorscale=custom_colorscale,
-                size=0,
-                opacity=0.9,
+                size=2,
+                opacity=0.5,
                 cmin=df_plot["Consumption_kWh"].min(),
                 cmax=df_plot["Consumption_kWh"].max(),
                 colorbar=dict(title="kWh")
