@@ -252,7 +252,7 @@ if not df_energy.empty:
                 x=df_plot["datetime"].iloc[i:i+2],
                 y=df_plot["Consumption_kWh"].iloc[i:i+2],
                 mode="lines",
-                line=dict(width=2.5, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
+                line=dict(width=0, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
                 hoverinfo="skip",
                 showlegend=False
             ))
