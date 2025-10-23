@@ -228,24 +228,36 @@ if not df_energy.empty:
         else: # Horario
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
         
-        fig_evolucion = px.line(
-            df_plot, 
-            x='datetime', 
-            y='Consumption_kWh',
-            labels={
-                "datetime": f"Fecha ({aggregation_level})",
-                "Consumption_kWh": "Consumo (kWh)"
-            },
-            hover_data={"datetime": False}
-        )
-        fig_evolucion.update_traces(hovertemplate=hover_template)
-        fig_evolucion.update_traces(
-        line=dict(color='royalblue'),
-        mode='lines+markers',
-        marker=dict(size=4, color='royalblue', opacity=0.6)
-        )
+        import plotly.graph_objects as go
 
+        # 🌈 黄蓝渐变折线
+        fig_evolucion = go.Figure()
+        
+        fig_evolucion.add_trace(go.Scatter(
+            x=df_plot['datetime'],
+            y=df_plot['Consumption_kWh'],
+            mode='lines+markers',
+            line=dict(width=4, color=None, colorscale='YlGnBu'),
+            marker=dict(
+                color=df_plot['Consumption_kWh'],
+                colorscale='YlGnBu',
+                size=5,
+                opacity=0.9
+            ),
+            hovertemplate=hover_template
+        ))
+        
+        # 🪄 样式优化
+        fig_evolucion.update_layout(
+            plot_bgcolor="#FFFFFF",
+            paper_bgcolor="#FFFFFF",
+            font=dict(color="#222", size=14),
+            xaxis=dict(gridcolor="#E0E0E0"),
+            yaxis=dict(gridcolor="#E0E0E0")
+        )
+        
         st.plotly_chart(fig_evolucion, use_container_width=True)
+
         
         col1, col2 = st.columns(2)
         with col1:
