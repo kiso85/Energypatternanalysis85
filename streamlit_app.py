@@ -245,7 +245,7 @@ if not df_energy.empty:
         marker=dict(size=4, color='royalblue', opacity=0.6)
         )
 
-st.plotly_chart(fig_evolucion, use_container_width=True)
+        st.plotly_chart(fig_evolucion, use_container_width=True)
         
         col1, col2 = st.columns(2)
         with col1:
