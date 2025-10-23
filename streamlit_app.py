@@ -6,6 +6,7 @@ import requests
 import io
 import locale
 import plotly.graph_objects as go
+import numpy as np
 
 # --- Configuración de la Página y Localización ---
 st.set_page_config(
@@ -230,10 +231,9 @@ if not df_energy.empty:
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
       
 
-        # 🧾 悬浮提示模板
         hover_template = "%{x|%Y-%m-%d %H:%M}<br>Consumption: %{y:.2f} kWh"
-        
-        # 🌈 自定义渐变（低值深蓝 → 高值橘色）
+
+        # 🌈 自定义蓝到橘渐变
         custom_colorscale = [
             [0.0, "#08306B"],  # 深蓝
             [0.25, "#2171B5"],
@@ -244,28 +244,36 @@ if not df_energy.empty:
         
         fig_evolucion = go.Figure()
         
+        # 🎨 将每个点之间的线段独立上色（伪渐变线）
+        for i in range(len(df_plot) - 1):
+            color_value = (df_plot["Consumption_kWh"].iloc[i] - df_plot["Consumption_kWh"].min()) / \
+                          (df_plot["Consumption_kWh"].max() - df_plot["Consumption_kWh"].min())
+            fig_evolucion.add_trace(go.Scatter(
+                x=df_plot["datetime"].iloc[i:i+2],
+                y=df_plot["Consumption_kWh"].iloc[i:i+2],
+                mode="lines",
+                line=dict(width=2.5, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
+                hoverinfo="skip",
+                showlegend=False
+            ))
+        
+        # 🔵 加点层（带 colorbar）
         fig_evolucion.add_trace(go.Scatter(
             x=df_plot["datetime"],
             y=df_plot["Consumption_kWh"],
-            mode="lines+markers",
-            line=dict(width=2.5, color="#2a9d8f"),
+            mode="markers",
             marker=dict(
                 color=df_plot["Consumption_kWh"],
                 colorscale=custom_colorscale,
-                size=2,                # ✅ 调小点的大小
-                opacity=0.8,
-                cmin=df_plot["Consumption_kWh"].min(),  # ✅ 明确映射范围
+                size=4,
+                opacity=0.9,
+                cmin=df_plot["Consumption_kWh"].min(),
                 cmax=df_plot["Consumption_kWh"].max(),
                 colorbar=dict(title="kWh")
             ),
-            hovertemplate=hover_template
+            hovertemplate=hover_template,
+            showlegend=False
         ))
-        
-        # 🪄 样式与布局优化
-        fig_evolucion.update_traces(
-            line_shape="spline",
-            hoverlabel=dict(bgcolor="white")
-        )
         
         fig_evolucion.update_layout(
             plot_bgcolor="#FFFFFF",
