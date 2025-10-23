@@ -228,34 +228,42 @@ if not df_energy.empty:
             hover_template = '<b>Día</b>: %{x|%A, %d %b %Y}<br><b>Consumo Medio</b>: %{y:.2f} kWh'
         else: # Horario
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
-        
-        
+      
 
-        # 🌈 黄蓝渐变折线
+        # 🧾 悬浮提示模板
         hover_template = "%{x|%Y-%m-%d %H:%M}<br>Consumption: %{y:.2f} kWh"
-
+        
+        # 🌈 自定义渐变（低值深蓝 → 高值橘色）
+        custom_colorscale = [
+            [0.0, "#08306B"],  # 深蓝
+            [0.25, "#2171B5"],
+            [0.5, "#6BAED6"],
+            [0.75, "#FDAE6B"],
+            [1.0, "#F16913"]   # 橘色
+        ]
+        
         fig_evolucion = go.Figure()
         
         fig_evolucion.add_trace(go.Scatter(
             x=df_plot["datetime"],
             y=df_plot["Consumption_kWh"],
             mode="lines+markers",
-            line_color="#2a9d8f",
-            line_width=3,
+            line=dict(width=2.5, color="#2a9d8f"),
             marker=dict(
                 color=df_plot["Consumption_kWh"],
-                colorscale="YlGnBu",
-                size=6,
-                opacity=0.9,
+                colorscale=custom_colorscale,
+                size=4,                # ✅ 调小点的大小
+                opacity=0.8,
+                cmin=df_plot["Consumption_kWh"].min(),  # ✅ 明确映射范围
+                cmax=df_plot["Consumption_kWh"].max(),
                 colorbar=dict(title="kWh")
             ),
             hovertemplate=hover_template
         ))
-
         
-        # 🪄 样式优化
+        # 🪄 样式与布局优化
         fig_evolucion.update_traces(
-            line_shape="spline",  # 平滑曲线
+            line_shape="spline",
             hoverlabel=dict(bgcolor="white")
         )
         
@@ -269,6 +277,7 @@ if not df_energy.empty:
         )
         
         st.plotly_chart(fig_evolucion, use_container_width=True)
+
 
         
         col1, col2 = st.columns(2)
