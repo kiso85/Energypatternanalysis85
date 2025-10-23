@@ -5,6 +5,7 @@ import plotly.express as px
 import requests
 import io
 import locale
+import plotly.graph_objects as go
 
 # --- Configuración de la Página y Localización ---
 st.set_page_config(
@@ -228,32 +229,42 @@ if not df_energy.empty:
         else: # Horario
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
         
-        import plotly.graph_objects as go
+        
 
         # 🌈 黄蓝渐变折线
+        hover_template = "%{x|%Y-%m-%d %H:%M}<br>Consumption: %{y:.2f} kWh"
+
         fig_evolucion = go.Figure()
         
+        # 使用 marker 渐变颜色，折线保持统一颜色（Plotly 不支持线条渐变）
         fig_evolucion.add_trace(go.Scatter(
             x=df_plot['datetime'],
             y=df_plot['Consumption_kWh'],
             mode='lines+markers',
-            line=dict(width=4, color=None, colorscale='YlGnBu'),
+            line=dict(width=3, color="#2a9d8f"),  # ✅ 固定主线色
             marker=dict(
                 color=df_plot['Consumption_kWh'],
                 colorscale='YlGnBu',
-                size=5,
-                opacity=0.9
+                size=6,
+                opacity=0.9,
+                colorbar=dict(title="kWh")
             ),
             hovertemplate=hover_template
         ))
         
         # 🪄 样式优化
+        fig_evolucion.update_traces(
+            line_shape="spline",  # 平滑曲线
+            hoverlabel=dict(bgcolor="white")
+        )
+        
         fig_evolucion.update_layout(
             plot_bgcolor="#FFFFFF",
             paper_bgcolor="#FFFFFF",
             font=dict(color="#222", size=14),
-            xaxis=dict(gridcolor="#E0E0E0"),
-            yaxis=dict(gridcolor="#E0E0E0")
+            xaxis=dict(gridcolor="#E0E0E0", title="Time"),
+            yaxis=dict(gridcolor="#E0E0E0", title="Consumption (kWh)"),
+            margin=dict(l=50, r=50, t=40, b=40)
         )
         
         st.plotly_chart(fig_evolucion, use_container_width=True)
