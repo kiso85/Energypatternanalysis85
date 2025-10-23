@@ -252,7 +252,7 @@ if not df_energy.empty:
                 x=df_plot["datetime"].iloc[i:i+2],
                 y=df_plot["Consumption_kWh"].iloc[i:i+2],
                 mode="lines",
-                line=dict(width=0, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
+                line=dict(width=2, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
                 hoverinfo="skip",
                 showlegend=False
             ))
@@ -265,7 +265,7 @@ if not df_energy.empty:
             marker=dict(
                 color=df_plot["Consumption_kWh"],
                 colorscale=custom_colorscale,
-                size=4,
+                size=0,
                 opacity=0.9,
                 cmin=df_plot["Consumption_kWh"].min(),
                 cmax=df_plot["Consumption_kWh"].max(),
