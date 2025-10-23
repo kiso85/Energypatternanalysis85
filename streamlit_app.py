@@ -252,7 +252,7 @@ if not df_energy.empty:
             marker=dict(
                 color=df_plot["Consumption_kWh"],
                 colorscale=custom_colorscale,
-                size=4,                # ✅ 调小点的大小
+                size=1,                # ✅ 调小点的大小
                 opacity=0.8,
                 cmin=df_plot["Consumption_kWh"].min(),  # ✅ 明确映射范围
                 cmax=df_plot["Consumption_kWh"].max(),
