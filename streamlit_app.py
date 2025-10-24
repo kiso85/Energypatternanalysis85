@@ -7,6 +7,8 @@ import io
 import locale
 import plotly.graph_objects as go
 import numpy as np
+import holidays
+
 
 # --- Configuración de la Página y Localización ---
 st.set_page_config(
@@ -154,6 +156,13 @@ with st.sidebar:
 
                 st.sidebar.markdown("---")
                 st.sidebar.header("2. Filtros de Datos")
+                holiday_option = st.sidebar.selectbox(
+                    "Filtrar por festivos (España)",
+                    options=["No filtrar", "Excluir festivos", "Solo festivos"],
+                    index=0,
+                    help="Elige si quieres excluir días festivos de España o mostrar solo los festivos."
+                )
+
                 
                 dias_semana = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'}
                 selected_days = st.sidebar.multiselect("Días de la semana", options=list(dias_semana.keys()), format_func=lambda x: dias_semana[x], default=list(dias_semana.keys()))
