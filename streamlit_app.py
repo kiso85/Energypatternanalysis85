@@ -240,61 +240,18 @@ if not df_energy.empty:
             hover_template = '<b>Fecha</b>: %{x|%d %b %Y - %H:%Mh}<br><b>Consumo</b>: %{y:.2f} kWh'
       
 
-        hover_template = "%{x|%Y-%m-%d %H:%M}<br>Consumption: %{y:.2f} kWh"
-
-        # 🌈 自定义蓝到橘渐变
-        custom_colorscale = [
-            [0.0, "#08306B"],  # 深蓝
-            [0.25, "#2171B5"],
-            [0.5, "#6BAED6"],
-            [0.75, "#FDAE6B"],
-            [1.0, "#F16913"]   # 橘色
-        ]
-        
-        fig_evolucion = go.Figure()
-        
-        # 🎨 将每个点之间的线段独立上色（伪渐变线）
-        for i in range(len(df_plot) - 1):
-            color_value = (df_plot["Consumption_kWh"].iloc[i] - df_plot["Consumption_kWh"].min()) / \
-                          (df_plot["Consumption_kWh"].max() - df_plot["Consumption_kWh"].min())
-            fig_evolucion.add_trace(go.Scatter(
-                x=df_plot["datetime"].iloc[i:i+2],
-                y=df_plot["Consumption_kWh"].iloc[i:i+2],
-                mode="lines",
-                line=dict(width=2, color=f"rgba({255*color_value:.0f}, {140*(1-color_value):.0f}, {50*(1-color_value):.0f}, 1)"),
-                hoverinfo="skip",
-                showlegend=False
-            ))
-        
-        # 🔵 加点层（带 colorbar）
-        fig_evolucion.add_trace(go.Scatter(
-            x=df_plot["datetime"],
-            y=df_plot["Consumption_kWh"],
-            mode="markers",
-            marker=dict(
-                color=df_plot["Consumption_kWh"],
-                colorscale=custom_colorscale,
-                size=2,
-                opacity=0.5,
-                cmin=df_plot["Consumption_kWh"].min(),
-                cmax=df_plot["Consumption_kWh"].max(),
-                colorbar=dict(title="kWh")
-            ),
-            hovertemplate=hover_template,
-            showlegend=False
-        ))
-        
-        fig_evolucion.update_layout(
-            plot_bgcolor="#FFFFFF",
-            paper_bgcolor="#FFFFFF",
-            font=dict(color="#222", size=14),
-            xaxis=dict(gridcolor="#E0E0E0", title="Time"),
-            yaxis=dict(gridcolor="#E0E0E0", title="Consumption (kWh)"),
-            margin=dict(l=50, r=50, t=40, b=40)
+        fig_evolucion = px.line(
+            df_plot, 
+            x='datetime', 
+            y='Consumption_kWh',
+            labels={
+                "datetime": f"Fecha ({aggregation_level})",
+                "Consumption_kWh": "Consumo (kWh)"
+            },
+            hover_data={"datetime": False}
         )
-        
+        fig_evolucion.update_traces(hovertemplate=hover_template)
         st.plotly_chart(fig_evolucion, use_container_width=True)
-
 
         
         col1, col2 = st.columns(2)
